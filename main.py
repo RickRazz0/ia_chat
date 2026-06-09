@@ -29,9 +29,11 @@ if os.environ.get("GEMINI_API_KEY") and not os.environ.get("GOOGLE_API_KEY"):
 try:
     client = genai.Client()
 except Exception as e:
-    print(f"⚠️ AVISO CRÍTICO: Falha ao inicializar o cliente Gemini.")
+    print(f"AVISO CRÍTICO: Falha ao inicializar o cliente Gemini.")
     print(f"Verifique se o arquivo .env existe e contém GEMINI_API_KEY. Detalhe: {e}")
     client = None
+
+
 
 # --- Modelos de Dados ---
 class ChatRequest(BaseModel):
@@ -78,7 +80,7 @@ async def chat_endpoint(request: ChatRequest):
 
     except Exception as e:
         # Imprime o erro real no terminal do VS Code para você investigar
-        print(f"❌ Erro na comunicação com o Gemini: {str(e)}")
+        print(f"Erro na comunicação com o Gemini: {str(e)}")
         # Devolve o erro real para o Swagger/Frontend ao invés de um 500 genérico
         raise HTTPException(status_code=500, detail=f"Erro na API da Google: {str(e)}")
 
