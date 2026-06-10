@@ -2,11 +2,9 @@ import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from google import genai
-from google.genai import types
+import google.generativeai as genai
+from google.generativeai import types
 from dotenv import load_dotenv
-
-load_dotenv()
 
 app = FastAPI(
     title="Backend Chatbot Gemini",
@@ -23,15 +21,17 @@ app.add_middleware(
 )
 
 # O SDK do Google procura por GOOGLE_API_KEY, então mapeamos GEMINI_API_KEY se existir
-if os.environ.get("GEMINI_API_KEY") and not os.environ.get("GOOGLE_API_KEY"):
-    os.environ["GOOGLE_API_KEY"] = os.environ["GEMINI_API_KEY"]
-
-try:
-    client = genai.Client()
-except Exception as e:
-    print(f"AVISO CRÍTICO: Falha ao inicializar o cliente Gemini.")
-    print(f"Verifique se o arquivo .env existe e contém GEMINI_API_KEY. Detalhe: {e}")
-    client = None
+api_key = os.environ.get("GEMINI_API_KEY")
+model = None
+if api_key:
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-flash-latest')
+    except Exception as e:
+        print(f"AVISO CRÍTICO: Falha ao configurar o cliente Gemini com a API Key. Detalhe: {e}")
+        model = None
+else:
+    print("AVISO: GEMINI_API_KEY não encontrada no ambiente.")
 
 
 
@@ -51,11 +51,10 @@ async def get_mcp_context(query: str) -> str:
 # --- Rotas da API ---
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
-    # Verifica se o cliente inicializou corretamente lá em cima
-    if not client:
+    if not model:
         raise HTTPException(
             status_code=500, 
-            detail="Servidor não possui chave de API configurada. Verifique o arquivo .env."
+            detail="Servidor não possui chave de API configurada ou falhou ao inicializar."
         )
 
     try:
@@ -65,13 +64,10 @@ async def chat_endpoint(request: ChatRequest):
             final_prompt = f"Contexto adicional:\n{mcp_context}\n\nMensagem do usuário: {request.mensagem}"
         else:
             final_prompt = request.mensagem
-
-        # --- 1. Correção do Async (Usando client.aio) ---
-        # Agora o servidor não bloqueia esperando a resposta da Google!
-        response = await client.aio.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=final_prompt,
-            config=types.GenerateContentConfig(
+        
+        response = await model.generate_content_async(
+            final_prompt,
+            generation_config=types.GenerationConfig(
                 temperature=0.7,
             )
         )
@@ -79,12 +75,11 @@ async def chat_endpoint(request: ChatRequest):
         return ChatResponse(resposta=response.text)
 
     except Exception as e:
-        # Imprime o erro real no terminal do VS Code para você investigar
         print(f"Erro na comunicação com o Gemini: {str(e)}")
-        # Devolve o erro real para o Swagger/Frontend ao invés de um 500 genérico
         raise HTTPException(status_code=500, detail=f"Erro na API da Google: {str(e)}")
+
 
 @app.get("/health")
 async def health_check():
-    status_gemini = "OK" if client else "Sem API Key"
+    status_gemini = "OK" if model else "Sem API Key"
     return {"status": "Servidor rodando", "gemini_client": status_gemini}
